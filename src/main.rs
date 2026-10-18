@@ -39,44 +39,8 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Generate the lockfile from `mvn dependency:list` output (at build time).
-    Lock {
-        /// File written by dependency:list with outputAbsoluteArtifactFilename=true
-        #[arg(long)]
-        deps: PathBuf,
-        /// Application JAR
-        #[arg(long)]
-        jar: PathBuf,
-        /// Application name (default: JAR file name without version)
-        #[arg(long)]
-        name: Option<String>,
-        /// Minimum Java version (default: inferred from the Main-Class bytecode)
-        #[arg(long)]
-        java: Option<String>,
-        /// Maven repository, repeatable (default: Maven Central)
-        #[arg(long = "repo")]
-        repos: Vec<String>,
-        /// Output file (default: <name>.lock next to the JAR)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Local Maven repository, used when paths in the deps file are unreachable
-        /// (default: ~/.m2/repository)
-        #[arg(long)]
-        local_repo: Option<PathBuf>,
-        /// Ship matching dependencies with the distribution (in lib/):
-        /// `group` or `group:artifact`, with `*` wildcards (e.g. `com.example.*`). Repeatable
-        #[arg(long)]
-        bundle: Vec<String>,
-        /// JVM argument, repeatable; use the `=` form
-        /// (e.g. `--jvm-arg=--add-modules=jdk.incubator.vector`, `--jvm-arg=-Xmx2g`)
-        #[arg(long = "jvm-arg", allow_hyphen_values = true)]
-        jvm_args: Vec<String>,
-        /// Maximum accepted version of a system Java
-        #[arg(long)]
-        java_max: Option<String>,
-        /// Where Java comes from: auto (system, else download), system, download
-        #[arg(long, value_enum)]
-        java_source: Option<lockfile::JavaSource>,
-    },
+    // boxed: the options are much larger than the other variants (PathBuf is 32 bytes on Windows)
+    Lock(Box<lock::LockOptions>),
     /// Prepare dependencies and JRE, then launch the application.
     Run {
         /// Lockfile (default: <executable-name>.lock next to the binary)
@@ -133,32 +97,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             doctor(lock, cli.cache_dir, cli.java_home)?;
             Ok(ExitCode::SUCCESS)
         }
-        Command::Lock {
-            deps,
-            jar,
-            name,
-            java,
-            repos,
-            output,
-            local_repo,
-            bundle,
-            jvm_args,
-            java_max,
-            java_source,
-        } => {
-            let path = lock::run(lock::LockOptions {
-                deps,
-                jar,
-                name,
-                java,
-                repos,
-                output,
-                local_repo,
-                bundle,
-                jvm_args,
-                java_max,
-                java_source,
-            })?;
+        Command::Lock(opts) => {
+            let path = lock::run(*opts)?;
             println!("wrote {}", path.display());
             Ok(ExitCode::SUCCESS)
         }

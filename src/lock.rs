@@ -11,22 +11,43 @@ use crate::{deps_list, fetch, hash, jar, java};
 
 pub const MAVEN_CENTRAL: &str = "https://repo.maven.apache.org/maven2";
 
+#[derive(clap::Args)]
 pub struct LockOptions {
+    /// File written by dependency:list with outputAbsoluteArtifactFilename=true
+    #[arg(long)]
     pub deps: PathBuf,
+    /// Application JAR
+    #[arg(long)]
     pub jar: PathBuf,
+    /// Application name (default: JAR file name without version)
+    #[arg(long)]
     pub name: Option<String>,
+    /// Minimum Java version (default: inferred from the Main-Class bytecode)
+    #[arg(long)]
     pub java: Option<String>,
+    /// Maven repository, repeatable (default: Maven Central)
+    #[arg(long = "repo")]
     pub repos: Vec<String>,
+    /// Output file (default: <name>.lock next to the JAR)
+    #[arg(short, long)]
     pub output: Option<PathBuf>,
-    /// Local Maven repository to search for JARs when the listed path does not exist.
+    /// Local Maven repository, used when paths in the deps file are unreachable
+    /// (default: ~/.m2/repository)
+    #[arg(long)]
     pub local_repo: Option<PathBuf>,
-    /// `group` or `group:artifact` patterns (with `*`) of dependencies to ship
-    /// with the distribution instead of downloading them (internal modules, SNAPSHOTs).
+    /// Ship matching dependencies with the distribution (in lib/):
+    /// `group` or `group:artifact`, with `*` wildcards (e.g. `com.example.*`). Repeatable
+    #[arg(long)]
     pub bundle: Vec<String>,
-    /// JVM arguments, written to `[app].jvm_args`.
+    /// JVM argument, repeatable; use the `=` form
+    /// (e.g. `--jvm-arg=--add-modules=jdk.incubator.vector`, `--jvm-arg=-Xmx2g`)
+    #[arg(long = "jvm-arg", allow_hyphen_values = true)]
     pub jvm_args: Vec<String>,
-    /// Maximum accepted version of a system Java (`[java].max`).
+    /// Maximum accepted version of a system Java
+    #[arg(long)]
     pub java_max: Option<String>,
+    /// Where Java comes from: auto (system, else download), system, download
+    #[arg(long, value_enum)]
     pub java_source: Option<JavaSource>,
 }
 
