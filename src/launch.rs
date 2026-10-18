@@ -172,6 +172,12 @@ pub fn prepare(
     })
 }
 
+#[cfg(windows)]
+/// Console handler that swallows every event: jarexec outlives the JVM's shutdown.
+unsafe extern "system" fn swallow_ctrl(_ctrl_type: u32) -> windows_sys::core::BOOL {
+    1
+}
+
 /// Starts the JVM. On Unix it replaces this process (`exec`): signals and exit code
 /// go directly to/from the JVM. Returns only on error.
 pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::Infallible> {
@@ -187,11 +193,13 @@ pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::
 
     #[cfg(not(unix))]
     {
-        // Ctrl+C reaches every process on the console: ignore it here
-        // so the JVM decides how to exit, and its code is forwarded
+        // Ctrl+C reaches every process on the console: swallow it here
+        // so the JVM decides how to exit, and its code is forwarded.
+        // A handler, not `None`: the NULL "ignore" flag is inherited and
+        // would leave the JVM deaf to Ctrl+C
         #[cfg(windows)]
         unsafe {
-            windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 1);
+            windows_sys::Win32::System::Console::SetConsoleCtrlHandler(Some(swallow_ctrl), 1);
         }
         let status = cmd
             .status()
