@@ -548,6 +548,7 @@ fn java_on_path() -> Option<PathBuf> {
         .map(|dir| dir.join(name))
         .find(|p| p.is_file())
         .and_then(|p| p.canonicalize().ok())
+        .map(crate::paths::plain)
         .and_then(|p| Some(p.parent()?.parent()?.to_path_buf()))
 }
 

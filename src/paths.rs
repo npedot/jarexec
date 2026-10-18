@@ -9,8 +9,29 @@ pub const CACHE_ENV: &str = "JAREXEC_CACHE";
 /// Directory containing the executable, with symlinks resolved.
 pub fn exe_dir() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("cannot determine the executable path")?;
-    let exe = exe.canonicalize().unwrap_or(exe);
+    let exe = exe.canonicalize().map(plain).unwrap_or(exe);
     Ok(exe.parent().unwrap_or(Path::new(".")).to_path_buf())
+}
+
+/// On Windows `canonicalize` yields verbatim paths (`\\?\C:\...`), which the JVM
+/// cannot use on the classpath: turns them back into the plain form.
+pub fn plain(path: PathBuf) -> PathBuf {
+    if cfg!(windows)
+        && let Some(s) = path.to_str().and_then(strip_verbatim)
+    {
+        return s.into();
+    }
+    path
+}
+
+/// `\\?\C:\x` → `C:\x`, `\\?\UNC\server\share\x` → `\\server\share\x`; `None` otherwise.
+fn strip_verbatim(s: &str) -> Option<String> {
+    if let Some(unc) = s.strip_prefix(r"\\?\UNC\") {
+        return Some(format!(r"\\{unc}"));
+    }
+    let rest = s.strip_prefix(r"\\?\")?;
+    let b = rest.as_bytes();
+    (b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':').then(|| rest.to_string())
 }
 
 /// Priority: `--cache-dir`, then `JAREXEC_CACHE`, then `.jarexec/` next to the executable.
@@ -57,6 +78,21 @@ fn find_lock(dir: &Path, stem: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn strips_windows_verbatim_prefix() {
+        assert_eq!(
+            strip_verbatim(r"\\?\C:\Users\x\.jarexec").as_deref(),
+            Some(r"C:\Users\x\.jarexec")
+        );
+        assert_eq!(
+            strip_verbatim(r"\\?\UNC\server\share\app").as_deref(),
+            Some(r"\\server\share\app")
+        );
+        // verbatim forms with no plain equivalent stay as they are
+        assert_eq!(strip_verbatim(r"\\?\Volume{abc}\x"), None);
+        assert_eq!(strip_verbatim(r"C:\Users\x"), None);
+    }
 
     #[test]
     fn prefers_lock_named_like_executable() {

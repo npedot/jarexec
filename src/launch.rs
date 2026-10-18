@@ -257,7 +257,7 @@ fn absolute(path: &Path) -> Result<PathBuf> {
     };
     match path.canonicalize() {
         // on Windows canonicalize yields `\\?\C:\...`, which some Java programs cannot handle
-        Ok(p) if cfg!(windows) => Ok(std::path::absolute(path).unwrap_or(p)),
+        Ok(p) if cfg!(windows) => Ok(crate::paths::plain(std::path::absolute(path).unwrap_or(p))),
         Ok(p) => Ok(p),
         Err(e) => bail!("{}: {e}", path.display()),
     }
