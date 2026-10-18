@@ -1,3 +1,4 @@
+mod clean;
 mod deps_list;
 mod fetch;
 mod hash;
@@ -16,7 +17,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use indicatif::HumanBytes;
 
@@ -64,8 +65,12 @@ enum Command {
         /// Lockfile (default: <executable-name>.lock next to the binary)
         lock: Option<PathBuf>,
     },
-    /// Clear the local cache (not implemented yet).
-    Clean,
+    /// Remove cached dependencies and JREs.
+    Clean {
+        /// Remove only what the last two versions of each app do not use
+        #[arg(long)]
+        unused: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -109,6 +114,8 @@ fn run(cli: Cli) -> Result<ExitCode> {
             };
             let lock = Lockfile::load(&lock_path)?;
             let cache = paths::cache_dir(cli.cache_dir)?;
+            let cache_lock = clean::cache_lock(&cache)?;
+            let _in_use = cache_lock.read().context("acquiring the cache lock")?;
             let req = java::Requirement::from_lock(&lock.java)?;
             let java = java::JavaResolver::new(&cache, cli.java_home)?.resolve(&req)?;
             println!(
@@ -143,7 +150,24 @@ fn run(cli: Cli) -> Result<ExitCode> {
             args,
         } => run_app(lock, args, cli.cache_dir, cli.java_home, refresh),
         Command::Package { .. } => bail!("`package` is not implemented yet"),
-        Command::Clean => bail!("`clean` is not implemented yet"),
+        Command::Clean { unused } => {
+            let cache = paths::cache_dir(cli.cache_dir)?;
+            let report = if unused {
+                clean::unused(&cache)?
+            } else {
+                clean::all(&cache)?
+            };
+            let Some(r) = report else {
+                bail!("an application is starting with this cache: retry when it is running");
+            };
+            println!(
+                "removed {} files ({}) from {}",
+                r.files,
+                HumanBytes(r.bytes),
+                cache.display()
+            );
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
 
@@ -158,8 +182,22 @@ fn run_app(
         Some(p) => p,
         None => paths::default_lock()?,
     };
+    let private_cache = paths::is_default_cache(cache_dir.as_deref());
     let cache = paths::cache_dir(cache_dir)?;
     let prepared = launch::prepare(&lock, &cache, java_home, refresh)?;
+    // a full preparation usually follows an update: drop what older versions left behind.
+    // Only in the app's own cache: a shared one may serve apps this launch knows nothing of
+    if !prepared.fast && private_cache {
+        match clean::unused(&cache) {
+            Ok(Some(r)) if r.files > 0 => eprintln!(
+                "jarexec: removed {} unused files ({}) from the cache",
+                r.files,
+                HumanBytes(r.bytes)
+            ),
+            Ok(_) => {}
+            Err(e) => eprintln!("jarexec: cache cleanup skipped: {e:#}"),
+        }
+    }
     if std::env::var_os("JAREXEC_DEBUG").is_some() {
         eprintln!(
             "jarexec: {} preparation → {} {}",

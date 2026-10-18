@@ -17,9 +17,9 @@ An application's dependencies change rarely, while releases are frequent. With j
 ## Features
 
 - **No Maven on the client.** Dependencies are resolved at build time by Maven (`dependency:list`). jarexec never interprets the pom.
-- **Integrity.** The SHA-256 of every JAR is computed at build time and verified on the client.
+- **Integrity.** The SHA-256 of every JAR, the application JAR included, is computed at build time and verified on the client.
 - **Automatic Java.** jarexec uses a compatible installed Java (`JAVA_HOME`, `PATH`, common locations, sdkman, …). If none is found, it downloads a [Temurin](https://adoptium.net) JRE into the cache.
-- **App-local cache.** Dependencies and the JRE go into `.jarexec/`, next to the binary. Uninstalling means deleting the folder.
+- **App-local cache.** Dependencies and the JRE go into `.jarexec/`, next to the binary. Uninstalling means deleting the folder. After an update, what older versions left behind is removed automatically.
 - **Fast startup.** From the second run on, jarexec does not touch the network: it runs `java @argfile` directly and returns the JVM's exit code.
 - **Cross-platform.** Linux, Windows and macOS, on x64 and arm64.
 
@@ -111,12 +111,26 @@ tar xzf myapp-linux-x64.tar.gz
 
 A renamed binary, such as `myapp`, acts purely as a launcher: it looks for `myapp.lock` next to itself and passes **all** arguments to the application. An archive holds a single binary, so you need one archive per platform.
 
+## Updating an application
+
+Ship the new JAR **together with the new lock** (and `lib/` if you use `--bundle`), never the JAR alone: the lock names the JAR file and records its SHA-256, so a JAR replaced on its own is rejected. Shipping the full archive again is fine, since dependencies and the JRE are not in it.
+
+Instructions for users:
+
+1. Close the application.
+2. Extract the archive **into the existing folder**, overwriting files. Do not delete `.jarexec/`: it holds Java and the libraries already downloaded. Extracting elsewhere works too, but downloads everything again.
+3. Optionally delete the JAR of the previous version.
+4. Start the application. If the new version has new dependencies, the first run downloads them; later runs are offline again.
+
+The first run after an update sees a new lock and redoes the full preparation. Right after it, jarexec removes from the cache whatever the current and the previous version do not use (the previous one is kept for a rollback). This happens only with the default `.jarexec/` cache: with `--cache-dir` or `JAREXEC_CACHE` the cache may be shared with other apps, so use `jarexec clean --unused` instead.
+
 ## Commands
 
 ```bash
 jarexec run    [app.lock] [-- args]   # prepare and launch
 jarexec fetch  [app.lock]             # fill the cache without launching
 jarexec doctor [app.lock]             # platform, selected Java and cache status
+jarexec clean  [--unused]             # empty the cache, or drop only what recent launches do not use
 jarexec lock   --deps … --jar …       # generate the lock (at build time)
 ```
 
@@ -139,6 +153,8 @@ version = 1
 [app]
 name = "myapp"
 jar = "myapp-1.0.jar"
+sha256 = "…"
+size = 48213
 main = "com.example.myapp.Main"
 jvm_args = ["-Xmx2g"]
 
@@ -177,7 +193,8 @@ The lock is regenerated on every build, so every setting belongs in `jarexec loc
 
 - Private repositories with authentication (`settings.xml`, Nexus, Artifactory) are not supported: use `--bundle`.
 - Classpath only, no module path.
-- `jarexec package` and `jarexec clean` are not implemented yet: build the distribution by hand, and clear the cache by deleting `.jarexec/`.
+- `jarexec package` is not implemented yet: build the distribution by hand.
+- `clean --unused` keeps only what is referenced by launches: dependencies brought in by `jarexec fetch` alone, with no launch afterwards, are removed.
 - The Windows and macOS binaries are built and tested in CI, but have seen little use on real machines.
 
 ## Development

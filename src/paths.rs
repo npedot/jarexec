@@ -45,6 +45,12 @@ pub fn cache_dir(arg: Option<PathBuf>) -> Result<PathBuf> {
     Ok(exe_dir()?.join(".jarexec"))
 }
 
+/// `true` when neither `--cache-dir` nor `JAREXEC_CACHE` is set: the cache is the
+/// app's own `.jarexec/`, not one possibly shared with other apps.
+pub fn is_default_cache(arg: Option<&Path>) -> bool {
+    arg.is_none() && std::env::var_os(CACHE_ENV).is_none_or(|v| v.is_empty())
+}
+
 /// `<executable-name>.lock` next to the binary, otherwise the only `*.lock` present.
 pub fn default_lock() -> Result<PathBuf> {
     let exe = std::env::current_exe()?;

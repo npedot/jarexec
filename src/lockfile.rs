@@ -21,6 +21,11 @@ pub struct App {
     pub name: String,
     /// JAR path, relative to the lockfile.
     pub jar: String,
+    /// SHA-256 and size of the JAR (absent in locks written before 0.2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
     /// If absent, `Main-Class` from the manifest is used.
     pub main: Option<String>,
     #[serde(default)]

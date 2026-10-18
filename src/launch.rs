@@ -3,6 +3,8 @@
 //! Fast path: if the cache marker `<id>.ok` still describes the current state
 //! (same lock, same JAR, Java and dependencies still present), launch
 //! right away with no network, no Java discovery and no rehashing.
+//! A changed application JAR is caught by its size; the full preparation
+//! verifies its SHA-256.
 
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -13,8 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::fetch::{self, Fetcher};
 use crate::java::{JavaResolver, Origin, Requirement};
-use crate::lockfile::{Dep, Lockfile};
-use crate::{hash, jar};
+use crate::lockfile::{App, Dep, Lockfile};
+use crate::{clean, hash, jar};
 
 /// Ready command: `java <args> <user arguments>`.
 #[derive(Debug)]
@@ -27,12 +29,16 @@ pub struct Prepared {
 
 /// State saved after a successful full preparation.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
-struct Marker {
-    java: PathBuf,
-    override_home: Option<PathBuf>,
-    app_jar: PathBuf,
-    cache: PathBuf,
-    args: Vec<String>,
+pub(crate) struct Marker {
+    pub java: PathBuf,
+    pub override_home: Option<PathBuf>,
+    /// Lockfile this marker was prepared from: cleanup keeps the latest ones per lock.
+    pub lock: PathBuf,
+    pub app_jar: PathBuf,
+    pub cache: PathBuf,
+    pub args: Vec<String>,
+    /// Cache entries in use, relative to the cache (`repo/…` JARs, `jre/<dir>`).
+    pub uses: Vec<PathBuf>,
 }
 
 pub fn prepare(
@@ -65,6 +71,7 @@ pub fn prepare(
         && let Some(marker) = read_marker(&marker_path)
         && marker.override_home == override_home
         && marker.app_jar == app_jar
+        && check_app_jar(&lock.app, &app_jar, false).is_ok()
         && marker.cache == cache
         && marker.java.is_file()
         && Fetcher::cached_paths(cache, &lock.remote_deps()).is_some()
@@ -79,6 +86,11 @@ pub fn prepare(
             fast: true,
         });
     }
+
+    check_app_jar(&lock.app, &app_jar, true)?;
+    // shared: cleanup must not remove what this preparation is about to reference
+    let cache_lock = clean::cache_lock(cache)?;
+    let _in_use = cache_lock.read().context("acquiring the cache lock")?;
 
     let req = Requirement::from_lock(&lock.java)?;
     let java = JavaResolver::new(cache, override_home.clone())?.resolve(&req)?;
@@ -104,6 +116,16 @@ pub fn prepare(
             )
         })?,
     };
+
+    let mut uses: Vec<PathBuf> = remote_paths
+        .iter()
+        .filter_map(|p| p.strip_prefix(cache).ok().map(Path::to_path_buf))
+        .collect();
+    if let Ok(rel) = java.install.home.strip_prefix(cache.join(clean::JRE_DIR))
+        && let Some(entry) = rel.components().next()
+    {
+        uses.push(Path::new(clean::JRE_DIR).join(entry));
+    }
 
     // same order as the lock, with bundled dependencies in place
     let mut remote_paths = remote_paths.into_iter();
@@ -136,9 +158,11 @@ pub fn prepare(
         // fast path stays on the verified Java instead of following it blindly
         java: absolute(&java.install.java_bin())?,
         override_home,
+        lock: lock_dir.join(lock_path.file_name().unwrap_or_default()),
         app_jar,
         cache: cache.to_path_buf(),
         args,
+        uses,
     };
     write_atomic(&marker_path, &toml::to_string(&marker)?)?;
     Ok(Prepared {
@@ -174,6 +198,30 @@ pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::
             .with_context(|| format!("launching {}", prepared.java.display()))?;
         std::process::exit(status.code().unwrap_or(1));
     }
+}
+
+/// Checks the application JAR against the lock: size always, SHA-256 with `verify`.
+/// Locks written before 0.2 carry neither and are accepted as they are.
+fn check_app_jar(app: &App, path: &Path, verify: bool) -> Result<()> {
+    if let Some(size) = app.size {
+        let len = std::fs::metadata(path)
+            .with_context(|| format!("reading {}", path.display()))?
+            .len();
+        ensure!(
+            len == size,
+            "{}: size differs from the lockfile (JAR not updated together with the lock?)",
+            path.display()
+        );
+    }
+    if verify && let Some(expected) = &app.sha256 {
+        let (sha, _) = hash::sha256_file(path)?;
+        ensure!(
+            &sha == expected,
+            "{}: SHA-256 differs from the lockfile",
+            path.display()
+        );
+    }
+    Ok(())
 }
 
 /// Path of a dependency shipped with the distribution (`None` if it must be downloaded).
@@ -233,7 +281,7 @@ fn quote_arg(arg: &str) -> String {
     out
 }
 
-fn read_marker(path: &Path) -> Option<Marker> {
+pub(crate) fn read_marker(path: &Path) -> Option<Marker> {
     toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
@@ -264,7 +312,7 @@ fn absolute(path: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::fs;
 
     use super::*;
@@ -282,14 +330,14 @@ mod tests {
     }
 
     /// App with one dependency already cached and a fake Java: no network needed.
-    struct Fixture {
+    pub(crate) struct Fixture {
         _dir: tempfile::TempDir,
-        lock: PathBuf,
-        cache: PathBuf,
-        java: PathBuf,
+        pub lock: PathBuf,
+        pub cache: PathBuf,
+        pub java: PathBuf,
     }
 
-    fn fixture(java_version: &str, main_in_lock: bool) -> Fixture {
+    pub(crate) fn fixture(java_version: &str, main_in_lock: bool) -> Fixture {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("app");
         let cache = dir.path().join("cache");
@@ -432,6 +480,51 @@ mod tests {
             bundled: Some("../../etc/passwd".into()),
         };
         assert!(bundled_path(Path::new("/app"), &dep, false).is_err());
+    }
+
+    #[test]
+    fn app_jar_is_checked_against_the_lock() {
+        let f = fixture("21.0.4", true);
+        let jar = f.lock.parent().unwrap().join("hello-1.0.jar");
+        let (sha, size) = hash::sha256_file(&jar).unwrap();
+        let text = fs::read_to_string(&f.lock).unwrap().replace(
+            "jar = \"hello-1.0.jar\"\n",
+            &format!("jar = \"hello-1.0.jar\"\nsha256 = \"{sha}\"\nsize = {size}\n"),
+        );
+        fs::write(&f.lock, text).unwrap();
+        prepare(&f.lock, &f.cache, Some(f.java.clone()), false).unwrap();
+
+        // replaced without the lock: a different size leaves the fast path and fails
+        let mut content = fs::read(&jar).unwrap();
+        content.push(0);
+        fs::write(&jar, &content).unwrap();
+        let err = prepare(&f.lock, &f.cache, Some(f.java.clone()), false).unwrap_err();
+        assert!(format!("{err:#}").contains("size differs"), "{err:#}");
+
+        // same size: only the full preparation rehashes
+        content.pop();
+        *content.last_mut().unwrap() ^= 1;
+        fs::write(&jar, &content).unwrap();
+        assert!(
+            prepare(&f.lock, &f.cache, Some(f.java.clone()), false)
+                .unwrap()
+                .fast
+        );
+        let err = prepare(&f.lock, &f.cache, Some(f.java.clone()), true).unwrap_err();
+        assert!(format!("{err:#}").contains("SHA-256 differs"), "{err:#}");
+    }
+
+    #[test]
+    fn marker_records_the_cache_entries_in_use() {
+        let f = fixture("21.0.4", true);
+        let p = prepare(&f.lock, &f.cache, Some(f.java.clone()), false).unwrap();
+        let argfile = PathBuf::from(p.args[0].strip_prefix('@').unwrap());
+        let marker = read_marker(&argfile.with_extension("ok")).unwrap();
+        assert_eq!(
+            marker.uses,
+            [Path::new("repo/com/acme/lib/1.0/lib-1.0.jar")]
+        );
+        assert!(marker.lock.ends_with("hello.lock") && marker.lock.is_absolute());
     }
 
     #[test]

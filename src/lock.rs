@@ -131,8 +131,10 @@ pub fn run(opts: LockOptions) -> Result<PathBuf> {
     }
 
     let info = jar::inspect(&opts.jar)?;
+    let (jar_sha256, jar_size) =
+        hash::sha256_file(&opts.jar).with_context(|| format!("hashing {jar_file}"))?;
     if let Ok(Some(release)) = jar::max_class_release(&opts.jar) {
-        requires.push((release, format!("{jar_file} (JAR applicativo)")));
+        requires.push((release, format!("{jar_file} (application JAR)")));
     }
     let java_version = match (opts.java, info.java_release) {
         (Some(v), _) => v,
@@ -166,6 +168,8 @@ pub fn run(opts: LockOptions) -> Result<PathBuf> {
         app: App {
             name: name.clone(),
             jar: jar_file,
+            sha256: Some(jar_sha256),
+            size: Some(jar_size),
             main: info.main_class,
             jvm_args: opts.jvm_args,
         },
@@ -469,6 +473,9 @@ mod tests {
         assert_eq!(lock.app.name, "hello");
         assert_eq!(lock.app.jar, "hello-1.0.0.jar");
         assert_eq!(lock.app.main.as_deref(), Some("com.acme.Main"));
+        let (sha, size) = hash::sha256_file(&dir.path().join("hello-1.0.0.jar")).unwrap();
+        assert_eq!(lock.app.sha256.as_deref(), Some(sha.as_str()));
+        assert_eq!(lock.app.size, Some(size));
         assert_eq!(lock.java.version, "21");
         assert_eq!(lock.java.max.as_deref(), Some("25"));
         assert_eq!(lock.java.source, JavaSource::Download);
