@@ -1,0 +1,6 @@
+
+The following files have been resolved:
+   org.apache.commons:commons-lang3:jar:3.14.0:compile:C:\Users\dev\.m2\repository\org\apache\commons\commons-lang3\3.14.0\commons-lang3-3.14.0.jar -- module org.apache.commons.lang3
+   org.openjfx:javafx-base:jar:linux:21.0.4:runtime:C:\Users\dev\.m2\repository\org\openjfx\javafx-base\21.0.4\javafx-base-21.0.4-linux.jar -- module javafx.base [auto]
+   org.slf4j:slf4j-api:jar:2.0.16:compile:C:\Users\dev\.m2\repository\org\slf4j\slf4j-api\2.0.16\slf4j-api-2.0.16.jar
+

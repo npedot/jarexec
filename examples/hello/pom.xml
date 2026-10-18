@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <!-- Example app / fixture for jarexec: transitive dependencies + test scope to be excluded. -->
+  <groupId>dev.jarexec.examples</groupId>
+  <artifactId>hello</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>21</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- transitive: commons-lang3 -->
+    <dependency>
+      <groupId>org.apache.commons</groupId>
+      <artifactId>commons-text</artifactId>
+      <version>1.12.0</version>
+    </dependency>
+    <!-- transitive: slf4j-api -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.16</version>
+    </dependency>
+    <!-- test scope: must NOT end up in the lockfile -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>5.11.3</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.4.2</version>
+        <configuration>
+          <archive>
+            <manifest>
+              <mainClass>dev.jarexec.examples.hello.Main</mainClass>
+            </manifest>
+          </archive>
+        </configuration>
+      </plugin>
+
+      <!-- jarexec snippet: flat list of runtime dependencies with absolute paths -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.8.1</version>
+        <executions>
+          <execution>
+            <id>jarexec-deps</id>
+            <phase>package</phase>
+            <goals><goal>list</goal></goals>
+            <configuration>
+              <outputFile>${project.build.directory}/jarexec-deps.txt</outputFile>
+              <includeScope>runtime</includeScope>
+              <outputAbsoluteArtifactFilename>true</outputAbsoluteArtifactFilename>
+              <sort>true</sort>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,2 @@
+# La fixture riproduce l'output di Maven su Windows: i CRLF fanno parte del test
+tests/fixtures/deps-windows.txt -text

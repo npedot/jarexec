@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: rust (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,    target: linux-x64 }
+          - { os: ubuntu-24.04-arm, target: linux-aarch64 }
+          - { os: windows-latest,   target: windows-x64 }
+          - { os: macos-latest,     target: mac-aarch64 }
+          - { os: macos-15-intel,   target: mac-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: smoke test
+        run: cargo run -- doctor
+
+  example:
+    name: maven example
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: mvn -B package
+        working-directory: examples/hello
+      - name: jarexec lock
+        run: >
+          cargo run -- lock
+          --deps examples/hello/target/jarexec-deps.txt
+          --jar examples/hello/target/hello-1.0.0.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hello-example
+          path: |
+            examples/hello/target/hello-*.jar
+            examples/hello/target/jarexec-deps.txt
+            examples/hello/target/hello.lock
+
+  build:
+    name: build (${{ matrix.target }})
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [rust, example]
+    strategy:
+      matrix:
+        include:
+          # 22.04: older glibc → the binary also runs on older distros
+          - { os: ubuntu-22.04,     target: linux-x64,     archive: tar.gz }
+          - { os: ubuntu-22.04-arm, target: linux-aarch64, archive: tar.gz }
+          - { os: windows-latest,   target: windows-x64,   archive: zip }
+          - { os: macos-latest,     target: mac-aarch64,   archive: tar.gz }
+          - { os: macos-15-intel,   target: mac-x64,       archive: tar.gz }
+    runs-on: ${{ matrix.os }}
+    env:
+      # Windows: static MSVC runtime, no VC++ Redistributable needed on the client
+      RUSTFLAGS: ${{ matrix.target == 'windows-x64' && '-C target-feature=+crt-static' || '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: check tag matches Cargo.toml
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != Cargo.toml v$version"; exit 1; }
+      - run: cargo build --release --locked
+      - name: package
+        id: package
+        shell: bash
+        run: |
+          name="jarexec-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          bin=target/release/jarexec
+          [ "${{ runner.os }}" = Windows ] && bin=$bin.exe
+          cp "$bin" LICENSE "dist/$name/"
+          cd dist
+          if [ "${{ matrix.archive }}" = zip ]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+            file="$name.zip"
+          else
+            tar czf "$name.tar.gz" "$name"
+            file="$name.tar.gz"
+          fi
+          if command -v sha256sum > /dev/null; then sha256sum "$file"; else shasum -a 256 "$file"; fi > "$file.sha256"
+          echo "file=$file" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/${{ steps.package.outputs.file }}*
+
+  release:
+    name: github release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY"
+          --title "$GITHUB_REF_NAME"
+          --generate-notes
+          ${{ contains(github.ref_name, '-') && '--prerelease' || '' }}
