@@ -1,9 +1,9 @@
-//! Parser dell'output di `mvn dependency:list` con `outputAbsoluteArtifactFilename=true`.
+//! Parser for `mvn dependency:list` output with `outputAbsoluteArtifactFilename=true`.
 //!
-//! Formato di ogni riga (dopo l'intestazione):
+//! Format of each line (after the header):
 //! `group:artifact:type[:classifier]:version:scope:path[ -- module name [auto]]`
-//! Il path può contenere `:` (es. `C:\...` su Windows), quindi si individua il campo
-//! `scope` e tutto ciò che segue è il path.
+//! The path may contain `:` (e.g. `C:\...` on Windows), so we locate the
+//! `scope` field and everything after it is the path.
 
 use std::path::PathBuf;
 
@@ -23,7 +23,7 @@ pub struct ListedDep {
 }
 
 impl ListedDep {
-    /// Coordinate nel formato del lockfile: `group:artifact:type[:classifier]:version`.
+    /// Coordinates in lockfile format: `group:artifact:type[:classifier]:version`.
     pub fn coord(&self) -> String {
         match &self.classifier {
             Some(c) => format!(
@@ -50,8 +50,8 @@ pub fn parse(text: &str) -> Result<Vec<ListedDep>> {
     Ok(deps)
 }
 
-/// Toglie le sequenze colore ANSI (`ESC [ ... m`): con l'output colorato attivo
-/// Maven le scrive anche nel file, attaccate al path (`...x.jar\x1b[36m -- module`).
+/// Strips ANSI color sequences (`ESC [ ... m`): with colored output enabled
+/// Maven writes them to the file too, glued to the path (`...x.jar\x1b[36m -- module`).
 fn strip_ansi(line: &str) -> std::borrow::Cow<'_, str> {
     if !line.contains('\x1b') {
         return line.into();
@@ -64,7 +64,7 @@ fn strip_ansi(line: &str) -> std::borrow::Cow<'_, str> {
             continue;
         }
         if chars.next() == Some('[') {
-            // parametri e intermedi fino al byte finale nell'intervallo '@'..='~'
+            // parameters and intermediates up to the final byte in the range '@'..='~'
             for c in chars.by_ref() {
                 if ('@'..='~').contains(&c) {
                     break;
@@ -75,14 +75,14 @@ fn strip_ansi(line: &str) -> std::borrow::Cow<'_, str> {
     out.into()
 }
 
-/// `Ok(None)` per righe che non sono dipendenze (intestazione, righe vuote, `none`).
+/// `Ok(None)` for lines that are not dependencies (header, blank lines, `none`).
 fn parse_line(line: &str) -> Result<Option<ListedDep>> {
     let line = match line.find(" -- ") {
         Some(i) => &line[..i],
         None => line,
     };
     let parts: Vec<&str> = line.split(':').collect();
-    // scope alla posizione 4 (senza classifier) o 5 (con classifier)
+    // scope at position 4 (no classifier) or 5 (with classifier)
     let Some(scope_at) = [4, 5]
         .into_iter()
         .find(|&i| parts.get(i).is_some_and(|p| SCOPES.contains(p)))
@@ -116,7 +116,7 @@ mod tests {
 
     #[test]
     fn strips_ansi_colors_written_by_maven() {
-        // formato reale osservato con Maven su Windows e colori attivi
+        // real format observed with Maven on Windows with colors enabled
         let text = "\r\nThe following files have been resolved:\r\n   \
             at.yawk.lz4:lz4-java:jar:1.11.0:compile:C:\\m2\\lz4-java-1.11.0.jar\x1b[36m -- module org.lz4.java\x1b[0;1m [auto]\x1b[m\r\n";
         let deps = parse(text).unwrap();

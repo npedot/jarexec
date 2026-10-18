@@ -1,5 +1,5 @@
-//! Modello del file `app.lock` (formato v1, vedi PLAN.md).
-#![allow(dead_code)] // usato dalle Fasi 1-4
+//! Model of the `app.lock` file (format v1).
+#![allow(dead_code)] // not every field is read yet
 
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +19,9 @@ pub struct Lockfile {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct App {
     pub name: String,
-    /// Percorso del JAR, relativo al lockfile.
+    /// JAR path, relative to the lockfile.
     pub jar: String,
-    /// Se assente si usa `Main-Class` dal manifest.
+    /// If absent, `Main-Class` from the manifest is used.
     pub main: Option<String>,
     #[serde(default)]
     pub jvm_args: Vec<String>,
@@ -29,9 +29,9 @@ pub struct App {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Java {
-    /// Versione minima (feature version, es. "21").
+    /// Minimum version (feature version, e.g. "21").
     pub version: String,
-    /// Versione massima accettata per un Java di sistema.
+    /// Maximum accepted version for a system Java.
     pub max: Option<String>,
     #[serde(default)]
     pub source: JavaSource,
@@ -79,8 +79,8 @@ pub struct Dep {
     pub coord: String,
     pub sha256: String,
     pub size: u64,
-    /// Path relativo al lockfile (es. `lib/x.jar`) se il JAR viaggia con l'app
-    /// invece di essere scaricato da un repository.
+    /// Path relative to the lockfile (e.g. `lib/x.jar`) when the JAR ships with the app
+    /// instead of being downloaded from a repository.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bundled: Option<String>,
 }
@@ -100,7 +100,7 @@ impl Lockfile {
         Ok(lock)
     }
 
-    /// Dipendenze da scaricare (escluse quelle incluse nella distribuzione).
+    /// Dependencies to download (excluding those shipped with the distribution).
     pub fn remote_deps(&self) -> Vec<Dep> {
         self.deps
             .iter()

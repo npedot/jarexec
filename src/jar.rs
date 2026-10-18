@@ -1,4 +1,4 @@
-//! Lettura dei metadati del JAR applicativo: manifest e versione bytecode.
+//! Reads application JAR metadata: manifest and bytecode version.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -10,7 +10,7 @@ use zip::ZipArchive;
 
 pub struct JarInfo {
     pub main_class: Option<String>,
-    /// Versione Java richiesta dal bytecode della main class (es. 21).
+    /// Java version required by the main class bytecode (e.g. 21).
     pub java_release: Option<u16>,
 }
 
@@ -48,13 +48,13 @@ pub fn inspect(path: &Path) -> Result<JarInfo> {
     })
 }
 
-/// Attributi della sezione principale. Le righe che iniziano con uno spazio
-/// continuano la precedente (il manifest va a capo ogni 72 byte).
+/// Attributes of the main section. Lines starting with a space
+/// continue the previous one (the manifest wraps every 72 bytes).
 fn parse_manifest(text: &str) -> HashMap<String, String> {
     let mut lines: Vec<String> = Vec::new();
     for line in text.lines() {
         if line.is_empty() {
-            break; // fine della sezione principale
+            break; // end of the main section
         }
         match (line.strip_prefix(' '), lines.last_mut()) {
             (Some(cont), Some(last)) => last.push_str(cont),
@@ -68,9 +68,9 @@ fn parse_manifest(text: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Versione Java più alta richiesta dalle classi del JAR. Si ignorano le classi
-/// in `META-INF/versions/` (multi-release: caricate solo dai Java che le supportano)
-/// e `module-info.class` (spesso compilato a parte per Java 9+).
+/// Highest Java version required by the JAR's classes. Ignores classes
+/// in `META-INF/versions/` (multi-release: loaded only by Javas that support them)
+/// and `module-info.class` (often compiled separately for Java 9+).
 pub fn max_class_release(path: &Path) -> Result<Option<u16>> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     let mut zip = ZipArchive::new(file)?;
@@ -98,7 +98,7 @@ pub fn max_class_release(path: &Path) -> Result<Option<u16>> {
     Ok(best)
 }
 
-/// Header di un .class: magic `CAFEBABE`, minor (u16), major (u16). Java N = major - 44.
+/// Header of a .class: magic `CAFEBABE`, minor (u16), major (u16). Java N = major - 44.
 fn class_file_release(header: &[u8; 8]) -> Result<u16> {
     if header[..4] != [0xCA, 0xFE, 0xBA, 0xBE] {
         bail!("invalid main class (bad magic number)");
@@ -118,7 +118,7 @@ pub(crate) mod tests {
 
     use super::*;
 
-    /// Crea un JAR minimale con manifest e una main class di versione `major`.
+    /// Creates a minimal JAR with a manifest and a main class of version `major`.
     pub fn write_test_jar(path: &Path, main: Option<&str>, major: u16) {
         let mut mf = "Manifest-Version: 1.0\r\n".to_string();
         if let Some(main) = main {

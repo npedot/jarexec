@@ -1,4 +1,4 @@
-//! Comando `jarexec lock`: dall'output di Maven al file `<app>.lock`.
+//! `jarexec lock` command: from Maven output to the `<app>.lock` file.
 
 use std::path::{Path, PathBuf};
 
@@ -18,22 +18,22 @@ pub struct LockOptions {
     pub java: Option<String>,
     pub repos: Vec<String>,
     pub output: Option<PathBuf>,
-    /// Repository Maven locale in cui cercare i JAR se il path indicato non esiste.
+    /// Local Maven repository to search for JARs when the listed path does not exist.
     pub local_repo: Option<PathBuf>,
-    /// Pattern `gruppo` o `gruppo:artifact` (con `*`) delle dipendenze da includere
-    /// nella distribuzione invece di scaricarle (moduli interni, SNAPSHOT).
+    /// `group` or `group:artifact` patterns (with `*`) of dependencies to ship
+    /// with the distribution instead of downloading them (internal modules, SNAPSHOTs).
     pub bundle: Vec<String>,
-    /// Argomenti per la JVM, scritti in `[app].jvm_args`.
+    /// JVM arguments, written to `[app].jvm_args`.
     pub jvm_args: Vec<String>,
-    /// Versione massima di un Java di sistema accettato (`[java].max`).
+    /// Maximum accepted version of a system Java (`[java].max`).
     pub java_max: Option<String>,
     pub java_source: Option<JavaSource>,
 }
 
-/// Cartella, relativa al lockfile, in cui vanno i JAR inclusi.
+/// Directory, relative to the lockfile, holding the bundled JARs.
 pub const BUNDLE_DIR: &str = "lib";
 
-/// Genera il lockfile e restituisce il path in cui è stato scritto.
+/// Generates the lockfile and returns the path it was written to.
 pub fn run(opts: LockOptions) -> Result<PathBuf> {
     let text = std::fs::read_to_string(&opts.deps)
         .with_context(|| format!("reading {}", opts.deps.display()))?;
@@ -70,7 +70,7 @@ pub fn run(opts: LockOptions) -> Result<PathBuf> {
             _ => {}
         }
         if d.kind == "pom" {
-            continue; // nessun JAR da mettere nel classpath
+            continue; // no JAR to put on the classpath
         }
         let path = locate(&d.path, &d.coord(), local_repo.as_deref())?;
         let (sha256, size) =
@@ -179,9 +179,9 @@ pub fn run(opts: LockOptions) -> Result<PathBuf> {
     Ok(output)
 }
 
-/// Avviso se qualche JAR contiene classi per un Java più recente di quello richiesto.
-/// Solo un avviso: alcune librerie includono classi caricate solo se disponibili
-/// (es. jline con il supporto FFM), quindi il massimo può sovrastimare.
+/// Warning if some JAR contains classes for a newer Java than the required one.
+/// Only a warning: some libraries include classes loaded only when available
+/// (e.g. jline with FFM support), so the maximum may overestimate.
 fn java_warning(java: u32, requires: &mut [(u16, String)]) -> Option<String> {
     requires.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let above: Vec<&(u16, String)> = requires
@@ -206,7 +206,7 @@ fn java_warning(java: u32, requires: &mut [(u16, String)]) -> Option<String> {
     ))
 }
 
-/// `com.example.*` confronta il gruppo, `gruppo:artifact` entrambi; `*` = qualsiasi testo.
+/// `com.example.*` matches the group, `group:artifact` both; `*` = any text.
 fn bundle_matches(pattern: &str, group: &str, artifact: &str) -> bool {
     match pattern.split_once(':') {
         Some((g, a)) => glob(g, group) && glob(a, artifact),
@@ -225,8 +225,8 @@ fn glob(pattern: &str, text: &str) -> bool {
     }
 }
 
-/// Il path scritto da Maven, poi lo stesso tradotto per WSL (Maven su Windows,
-/// jarexec in WSL), poi il layout standard nel repository locale.
+/// The path written by Maven, then the same path translated for WSL (Maven on Windows,
+/// jarexec in WSL), then the standard layout in the local repository.
 fn locate(listed: &Path, coord: &str, local_repo: Option<&Path>) -> Result<PathBuf> {
     let mut candidates = vec![listed.to_path_buf()];
     if cfg!(unix)
@@ -267,7 +267,7 @@ fn file_name(path: &Path) -> Result<String> {
         .with_context(|| format!("invalid JAR path: {}", path.display()))
 }
 
-/// `myapp-1.4.2.jar` → `myapp`: si taglia al primo `-` seguito da una cifra.
+/// `myapp-1.4.2.jar` → `myapp`: cut at the first `-` followed by a digit.
 fn default_app_name(jar_file: &str) -> String {
     let stem = jar_file.strip_suffix(".jar").unwrap_or(jar_file);
     let cut = stem
@@ -298,7 +298,7 @@ mod tests {
         std::fs::create_dir_all(jar.parent().unwrap()).unwrap();
         std::fs::write(&jar, b"x").unwrap();
         let found = locate(
-            Path::new("/non/esiste/lib-1.0.jar"),
+            Path::new("/does/not/exist/lib-1.0.jar"),
             "com.acme:lib:jar:1.0",
             Some(repo.path()),
         )
@@ -306,14 +306,14 @@ mod tests {
         assert_eq!(found, jar);
 
         let err = locate(
-            Path::new("/non/esiste/x.jar"),
+            Path::new("/does/not/exist/x.jar"),
             "com.acme:x:jar:1.0",
             Some(repo.path()),
         )
         .unwrap_err()
         .to_string();
         assert!(
-            err.contains("/non/esiste/x.jar") && err.contains("--local-repo"),
+            err.contains("/does/not/exist/x.jar") && err.contains("--local-repo"),
             "{err}"
         );
     }
@@ -353,9 +353,9 @@ mod tests {
     fn bundles_matching_jars_next_to_the_lock() {
         let dir = tempfile::tempdir().unwrap();
         let internal = dir.path().join("commons-1.0.0-SNAPSHOT.jar");
-        std::fs::write(&internal, b"interno").unwrap();
+        std::fs::write(&internal, b"internal").unwrap();
         let public = dir.path().join("lib-1.0.jar");
-        std::fs::write(&public, b"pubblico").unwrap();
+        std::fs::write(&public, b"public").unwrap();
         let deps = dir.path().join("deps.txt");
         std::fs::write(
             &deps,
@@ -395,7 +395,7 @@ mod tests {
         assert_eq!(lock.deps[1].bundled, None);
         assert_eq!(
             std::fs::read(out_dir.join("lib/commons-1.0.0-SNAPSHOT.jar")).unwrap(),
-            b"interno"
+            b"internal"
         );
         assert!(!out_dir.join("lib/lib-1.0.jar").exists());
     }
@@ -412,7 +412,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let lib = dir.path().join("lib-1.0.jar");
         std::fs::write(&lib, b"abc").unwrap();
-        let test_lib = dir.path().join("junit.jar"); // non deve essere letto
+        let test_lib = dir.path().join("junit.jar"); // must not be read
         let deps = dir.path().join("deps.txt");
         std::fs::write(
             &deps,

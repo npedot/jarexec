@@ -1,4 +1,4 @@
-//! Client HTTP e barra di avanzamento condivisi da download di dipendenze e JRE.
+//! HTTP client and progress bar shared by dependency and JRE downloads.
 
 use std::time::Duration;
 
@@ -10,12 +10,12 @@ pub fn client() -> Result<Client> {
     Ok(Client::builder()
         .user_agent(concat!("jarexec/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
-        // nel client bloccante vale per ogni lettura del body: è un timeout di inattività
+        // in the blocking client this applies to each body read: it is an idle timeout
         .timeout(Duration::from_secs(60))
         .build()?)
 }
 
-/// Barra sui byte totali; nascosta se non c'è niente da trasferire o se stderr non è un terminale.
+/// Bar over total bytes; hidden when there is nothing to transfer or stderr is not a terminal.
 pub fn progress_bar(total: u64, label: &str) -> ProgressBar {
     if total == 0 {
         return ProgressBar::hidden();

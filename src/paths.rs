@@ -1,4 +1,4 @@
-//! Risoluzione di cache e lockfile rispetto alla posizione dell'eseguibile.
+//! Cache and lockfile resolution relative to the executable's location.
 
 use std::path::{Path, PathBuf};
 
@@ -6,14 +6,14 @@ use anyhow::{Context, Result, bail};
 
 pub const CACHE_ENV: &str = "JAREXEC_CACHE";
 
-/// Cartella che contiene l'eseguibile, con i symlink risolti.
+/// Directory containing the executable, with symlinks resolved.
 pub fn exe_dir() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("cannot determine the executable path")?;
     let exe = exe.canonicalize().unwrap_or(exe);
     Ok(exe.parent().unwrap_or(Path::new(".")).to_path_buf())
 }
 
-/// Priorità: `--cache-dir`, poi `JAREXEC_CACHE`, poi `.jarexec/` accanto all'eseguibile.
+/// Priority: `--cache-dir`, then `JAREXEC_CACHE`, then `.jarexec/` next to the executable.
 pub fn cache_dir(arg: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(dir) = arg {
         return Ok(dir);
@@ -24,7 +24,7 @@ pub fn cache_dir(arg: Option<PathBuf>) -> Result<PathBuf> {
     Ok(exe_dir()?.join(".jarexec"))
 }
 
-/// `<nome-eseguibile>.lock` accanto al binario, altrimenti l'unico `*.lock` presente.
+/// `<executable-name>.lock` next to the binary, otherwise the only `*.lock` present.
 pub fn default_lock() -> Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let stem = exe.file_stem().unwrap_or_default().to_owned();

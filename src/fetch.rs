@@ -1,9 +1,9 @@
-//! Download e cache delle dipendenze del lockfile.
+//! Download and caching of lockfile dependencies.
 //!
-//! Invariante: un file in `repo/` esiste solo se il suo SHA-256 è già stato verificato.
-//! Si scrive sempre in un `.part` e si rinomina solo dopo la verifica, sotto un file
-//! lock per artefatto, così istanze concorrenti o download interrotti non lasciano
-//! mai file corrotti in cache.
+//! Invariant: a file in `repo/` exists only if its SHA-256 has already been verified.
+//! Writes always go to a `.part` file, renamed only after verification, under a
+//! per-artifact file lock, so concurrent instances or interrupted downloads never
+//! leave corrupt files in the cache.
 
 use std::ffi::OsString;
 use std::fs::{self, File};
@@ -21,7 +21,7 @@ use crate::{hash, http};
 
 pub const DEFAULT_THREADS: usize = 6;
 
-/// Path in cache e provenienza di una dipendenza.
+/// Cache path and origin of a dependency.
 type Fetched = Result<(PathBuf, Source)>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,7 +36,7 @@ pub struct Report {
     pub cached: usize,
     pub from_m2: usize,
     pub downloaded: usize,
-    /// Byte copiati o scaricati in questa esecuzione.
+    /// Bytes copied or downloaded in this run.
     pub bytes: u64,
 }
 
@@ -77,8 +77,8 @@ impl Fetcher {
         Ok(self.repo_dir.join(repo_path(&dep.coord)?))
     }
 
-    /// Path in cache se *tutte* le dipendenze ci sono già, senza rete né client HTTP.
-    /// Basta la dimensione: in cache entrano solo file già verificati.
+    /// Cache paths if *all* dependencies are already there, with no network or HTTP client.
+    /// Size is enough: only verified files ever enter the cache.
     pub fn cached_paths(cache_root: &Path, deps: &[Dep]) -> Option<Vec<PathBuf>> {
         let repo_dir = cache_root.join("repo");
         deps.iter()
@@ -89,8 +89,8 @@ impl Fetcher {
             .collect()
     }
 
-    /// Porta in cache tutte le dipendenze e restituisce i loro path nell'ordine del lock.
-    /// Prosegue anche se qualcuna fallisce, poi riporta tutti gli errori insieme.
+    /// Brings every dependency into the cache and returns their paths in lock order.
+    /// Keeps going when some fail, then reports all errors together.
     pub fn fetch_all(&self, deps: &[Dep], threads: usize) -> Result<(Vec<PathBuf>, Report)> {
         fs::create_dir_all(&self.lock_dir)
             .with_context(|| format!("creating {}", self.lock_dir.display()))?;
@@ -167,7 +167,7 @@ impl Fetcher {
                 .with_context(|| format!("creating {}", lock_path.display()))?,
         );
         let _guard = lock.write().context("acquiring the file lock")?;
-        // un'altra istanza può averlo completato mentre aspettavamo il lock
+        // another instance may have completed it while we waited for the lock
         if is_complete(&target, dep) {
             return Ok((target, Source::Cache));
         }
@@ -201,7 +201,7 @@ impl Fetcher {
         bail!("{}", failures.join("; "))
     }
 
-    /// Copia da `~/.m2` se presente e con lo stesso hash. `false` se non utilizzabile.
+    /// Copies from `~/.m2` if present with the same hash. `false` if not usable.
     fn copy_from_m2(&self, dep: &Dep, part: &Path, progress: &ProgressBar) -> Result<bool> {
         let Some(m2) = &self.m2 else { return Ok(false) };
         let Ok(src) = File::open(m2.join(repo_path(&dep.coord)?)) else {
@@ -210,7 +210,7 @@ impl Fetcher {
         let out = File::create(part)?;
         let (sha, _) = hash::copy_hashed(src, &out, |_| {})?;
         if sha != dep.sha256 {
-            // es. SNAPSHOT ricompilato in locale: si ignora e si scarica dal repository
+            // e.g. a SNAPSHOT rebuilt locally: ignore it and download from the repository
             drop(out);
             fs::remove_file(part)?;
             return Ok(false);
@@ -220,7 +220,7 @@ impl Fetcher {
         Ok(true)
     }
 
-    /// `Ok(false)` se il repository risponde 404.
+    /// `Ok(false)` if the repository answers 404.
     fn download(&self, url: &str, dep: &Dep, part: &Path, progress: &ProgressBar) -> Result<bool> {
         let resp = self.client.get(url).send()?;
         if resp.status() == StatusCode::NOT_FOUND {
@@ -239,7 +239,7 @@ impl Fetcher {
     }
 }
 
-/// Coordinate `group:artifact:type[:classifier]:version` → path relativo nel repository Maven.
+/// Coordinates `group:artifact:type[:classifier]:version` → relative path in the Maven repository.
 pub fn repo_path(coord: &str) -> Result<String> {
     let parts: Vec<&str> = coord.split(':').collect();
     let (group, artifact, kind, classifier, version) = match parts[..] {
@@ -247,7 +247,7 @@ pub fn repo_path(coord: &str) -> Result<String> {
         [g, a, t, c, v] => (g, a, t, Some(c), v),
         _ => bail!("invalid coordinates: {coord}"),
     };
-    // il lockfile arriva con l'app, ma non deve poter scrivere fuori dalla cache
+    // the lockfile ships with the app, but must not be able to write outside the cache
     ensure!(
         parts
             .iter()
@@ -269,8 +269,8 @@ pub fn repo_path(coord: &str) -> Result<String> {
     ))
 }
 
-/// Apre (o crea) un file usato solo come lock, senza troncarlo: su Windows
-/// troncare un file su cui un'altra istanza tiene il lock può fallire.
+/// Opens (or creates) a file used only as a lock, without truncating it: on Windows
+/// truncating a file locked by another instance can fail.
 pub(crate) fn open_lock_file(path: &Path) -> std::io::Result<File> {
     fs::OpenOptions::new()
         .create(true)
@@ -283,7 +283,7 @@ fn is_complete(path: &Path, dep: &Dep) -> bool {
     path.metadata().is_ok_and(|m| m.len() == dep.size)
 }
 
-/// `x.jar` → `x.jar.<pid>.part`, nella stessa cartella così il rename è atomico.
+/// `x.jar` → `x.jar.<pid>.part`, in the same directory so the rename is atomic.
 fn part_path(target: &Path) -> PathBuf {
     let mut name = OsString::from(target.as_os_str());
     name.push(format!(".{}.part", std::process::id()));
@@ -322,7 +322,7 @@ mod tests {
         Fetcher::with_client(client(), cache, repos, m2)
     }
 
-    const LIB: &[u8] = b"contenuto del jar";
+    const LIB: &[u8] = b"jar contents";
     const LIB_PATH: &str = "/com/acme/lib/1.0/lib-1.0.jar";
 
     #[test]
@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(
             fs::read_dir(dir).unwrap().count(),
             0,
-            "niente .jar né .part"
+            "no .jar or .part left"
         );
     }
 

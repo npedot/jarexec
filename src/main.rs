@@ -105,8 +105,8 @@ enum Command {
 }
 
 fn main() -> ExitCode {
-    // binario rinominato (es. `myapp`): fa solo da launcher e tutti gli
-    // argomenti vanno all'applicazione; le opzioni arrivano dalle variabili d'ambiente
+    // renamed binary (e.g. `myapp`): acts only as a launcher and all
+    // arguments go to the application; options come from environment variables
     let result = if launcher_mode() {
         run_app(
             None,
@@ -242,7 +242,7 @@ fn launcher_mode() -> bool {
         .is_some_and(|stem| is_launcher_name(&stem))
 }
 
-/// `jarexec`, `jarexec-0.1.0`, `jarexec-<hash>` (binari di test) restano la CLI.
+/// `jarexec`, `jarexec-0.1.0`, `jarexec-<hash>` (test binaries) stay the CLI.
 fn is_launcher_name(stem: &str) -> bool {
     let stem = stem.to_ascii_lowercase();
     stem != "jarexec" && !stem.starts_with("jarexec-")

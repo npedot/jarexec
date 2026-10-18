@@ -1,8 +1,8 @@
-//! Avvio dell'applicazione: prepara Java, dipendenze e argfile, poi lancia la JVM.
+//! Application launch: prepares Java, dependencies and argfile, then starts the JVM.
 //!
-//! Percorso rapido: se il marker `<id>.ok` della cache descrive ancora lo stato
-//! attuale (stesso lock, stesso JAR, Java e dipendenze ancora presenti), si avvia
-//! subito senza rete, senza ricerca del Java e senza ricalcolare hash.
+//! Fast path: if the cache marker `<id>.ok` still describes the current state
+//! (same lock, same JAR, Java and dependencies still present), launch
+//! right away with no network, no Java discovery and no rehashing.
 
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -16,16 +16,16 @@ use crate::java::{JavaResolver, Origin, Requirement};
 use crate::lockfile::{Dep, Lockfile};
 use crate::{hash, jar};
 
-/// Comando pronto: `java <args> <argomenti utente>`.
+/// Ready command: `java <args> <user arguments>`.
 #[derive(Debug)]
 pub struct Prepared {
     pub java: PathBuf,
     pub args: Vec<String>,
-    /// `true` se preparato dal marker, senza rete né ricerca del Java.
+    /// `true` if prepared from the marker, with no network or Java discovery.
     pub fast: bool,
 }
 
-/// Stato salvato dopo una preparazione completa riuscita.
+/// State saved after a successful full preparation.
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 struct Marker {
     java: PathBuf,
@@ -105,7 +105,7 @@ pub fn prepare(
         })?,
     };
 
-    // stesso ordine del lock, con le dipendenze incluse al loro posto
+    // same order as the lock, with bundled dependencies in place
     let mut remote_paths = remote_paths.into_iter();
     let mut classpath = vec![app_jar.clone()];
     for dep in &lock.deps {
@@ -122,7 +122,7 @@ pub fn prepare(
     let mut jvm_args = lock.app.jvm_args.clone();
     jvm_args.extend(["-cp".to_string(), classpath, main]);
 
-    // gli argfile (`java @file`) esistono da Java 9; per Java 8 si passano diretti
+    // argfiles (`java @file`) exist since Java 9; for Java 8 pass arguments directly
     let args = if java.install.version.feature() >= 9 {
         let argfile = cache.join(format!("{}.args", &lock_hash[..16]));
         write_atomic(&argfile, &argfile_content(&jvm_args))?;
@@ -132,8 +132,8 @@ pub fn prepare(
     };
 
     let marker = Marker {
-        // path reale: se un symlink (es. sdkman `current`) cambia destinazione, il
-        // percorso rapido resta sul Java già verificato invece di seguirlo alla cieca
+        // real path: if a symlink (e.g. sdkman `current`) changes target, the
+        // fast path stays on the verified Java instead of following it blindly
         java: absolute(&java.install.java_bin())?,
         override_home,
         app_jar,
@@ -148,8 +148,8 @@ pub fn prepare(
     })
 }
 
-/// Avvia la JVM. Su Unix sostituisce questo processo (`exec`): segnali e codice di
-/// uscita arrivano direttamente alla/dalla JVM. Ritorna solo in caso di errore.
+/// Starts the JVM. On Unix it replaces this process (`exec`): signals and exit code
+/// go directly to/from the JVM. Returns only on error.
 pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::Infallible> {
     let mut cmd = Command::new(&prepared.java);
     cmd.args(&prepared.args).args(user_args);
@@ -163,8 +163,8 @@ pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::
 
     #[cfg(not(unix))]
     {
-        // Ctrl+C arriva a tutti i processi della console: lo si ignora qui
-        // così è la JVM a decidere come terminare, e se ne inoltra il codice
+        // Ctrl+C reaches every process on the console: ignore it here
+        // so the JVM decides how to exit, and its code is forwarded
         #[cfg(windows)]
         unsafe {
             windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 1);
@@ -176,13 +176,13 @@ pub fn exec(prepared: Prepared, user_args: &[OsString]) -> Result<std::convert::
     }
 }
 
-/// Path di una dipendenza inclusa nella distribuzione (`None` se va scaricata).
-/// Controlla sempre la dimensione; con `verify` anche l'hash (preparazione completa).
+/// Path of a dependency shipped with the distribution (`None` if it must be downloaded).
+/// Always checks the size; with `verify` also the hash (full preparation).
 fn bundled_path(lock_dir: &Path, dep: &Dep, verify: bool) -> Result<Option<PathBuf>> {
     let Some(rel) = &dep.bundled else {
         return Ok(None);
     };
-    // il lockfile non deve poter puntare fuori dalla cartella dell'app
+    // the lockfile must not be able to point outside the app directory
     ensure!(
         Path::new(rel)
             .components()
@@ -213,8 +213,8 @@ fn bundled_path(lock_dir: &Path, dep: &Dep, verify: bool) -> Result<Option<PathB
     Ok(Some(path))
 }
 
-/// Un argomento per riga. Nell'argfile `\` è un carattere di escape dentro le
-/// virgolette, quindi i path Windows (`C:\...`) vanno raddoppiati.
+/// One argument per line. In an argfile `\` is an escape character inside
+/// quotes, so Windows paths (`C:\...`) must be doubled.
 fn argfile_content(args: &[String]) -> String {
     args.iter().map(|a| quote_arg(a) + "\n").collect()
 }
@@ -237,7 +237,7 @@ fn read_marker(path: &Path) -> Option<Marker> {
     toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
 }
 
-/// Scrive in un file temporaneo e rinomina: chi legge vede il vecchio o il nuovo, mai metà.
+/// Writes to a temp file and renames: readers see the old or the new one, never half.
 fn write_atomic(path: &Path, content: &str) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
@@ -256,7 +256,7 @@ fn absolute(path: &Path) -> Result<PathBuf> {
         path
     };
     match path.canonicalize() {
-        // su Windows canonicalize produce `\\?\C:\...`, che alcuni programmi Java non gestiscono
+        // on Windows canonicalize yields `\\?\C:\...`, which some Java programs cannot handle
         Ok(p) if cfg!(windows) => Ok(std::path::absolute(path).unwrap_or(p)),
         Ok(p) => Ok(p),
         Err(e) => bail!("{}: {e}", path.display()),
@@ -281,7 +281,7 @@ mod tests {
         assert_eq!(quote_arg(r#"-Dmsg="ciao""#), r#""-Dmsg=\"ciao\"""#);
     }
 
-    /// App con una dipendenza già in cache e un Java finto: nessuna rete necessaria.
+    /// App with one dependency already cached and a fake Java: no network needed.
     struct Fixture {
         _dir: tempfile::TempDir,
         lock: PathBuf,
@@ -390,7 +390,7 @@ mod tests {
         let f = fixture("21.0.4", true);
         let app = f.lock.parent().unwrap().to_path_buf();
         fs::create_dir(app.join("lib")).unwrap();
-        fs::write(app.join("lib/core-1.0-SNAPSHOT.jar"), b"interno").unwrap();
+        fs::write(app.join("lib/core-1.0-SNAPSHOT.jar"), b"internal").unwrap();
         let (sha, size) = hash::sha256_file(&app.join("lib/core-1.0-SNAPSHOT.jar")).unwrap();
         let mut text = fs::read_to_string(&f.lock).unwrap();
         text.push_str(&format!(
@@ -409,9 +409,9 @@ mod tests {
                 .fast
         );
 
-        // stessa dimensione ma contenuto diverso: il percorso rapido non ricalcola
-        // l'hash, la preparazione completa sì
-        fs::write(app.join("lib/core-1.0-SNAPSHOT.jar"), b"INTERNO").unwrap();
+        // same size but different content: the fast path does not rehash,
+        // the full preparation does
+        fs::write(app.join("lib/core-1.0-SNAPSHOT.jar"), b"INTERNAL").unwrap();
         let err = prepare(&f.lock, &f.cache, Some(f.java.clone()), true).unwrap_err();
         assert!(format!("{err:#}").contains("SHA-256 differs"), "{err:#}");
 

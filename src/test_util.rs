@@ -1,4 +1,4 @@
-//! Strumenti condivisi dai test.
+//! Helpers shared by tests.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
@@ -8,9 +8,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use reqwest::blocking::Client;
 
-/// Server HTTP minimale: risponde 200 per i path noti, 404 per gli altri.
-/// La chiave è il path della richiesta, query string inclusa. Nei body testuali
-/// `{BASE}` diventa l'URL del server (la porta si conosce solo dopo il bind).
+/// Minimal HTTP server: answers 200 for known paths, 404 for the rest.
+/// The key is the request path, query string included. In text bodies
+/// `{BASE}` becomes the server URL (the port is known only after bind).
 pub struct TestServer {
     pub url: String,
     pub hits: Arc<AtomicUsize>,
@@ -64,7 +64,7 @@ pub fn serve(files: &[(&str, &[u8])]) -> TestServer {
     TestServer { url, hits }
 }
 
-/// Client senza proxy: le richieste a 127.0.0.1 non devono passare da un proxy di sistema.
+/// Client without proxy: requests to 127.0.0.1 must not go through a system proxy.
 pub fn client() -> Client {
     Client::builder().no_proxy().build().unwrap()
 }

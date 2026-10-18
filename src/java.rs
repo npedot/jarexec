@@ -1,8 +1,8 @@
-//! Scelta del Java: un'installazione di sistema compatibile, altrimenti un JRE
-//! Temurin scaricato da Adoptium nella cache (`jre/`).
+//! Java selection: a compatible system installation, otherwise a Temurin JRE
+//! downloaded from Adoptium into the cache (`jre/`).
 //!
-//! Come per le dipendenze, un JRE compare in `jre/<nome>` solo a installazione
-//! completa e verificata: si estrae in una cartella temporanea e poi si rinomina.
+//! As with dependencies, a JRE appears in `jre/<name>` only once the installation
+//! is complete and verified: it is extracted into a temp directory, then renamed.
 
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
@@ -23,7 +23,7 @@ use crate::{hash, http};
 pub const JAVA_HOME_ENV: &str = "JAREXEC_JAVA_HOME";
 const ADOPTIUM_API: &str = "https://api.adoptium.net";
 
-/// Versione Java normalizzata: `1.8.0_402` → `8.0.402`, `21.0.10` → `21.0.10`.
+/// Normalized Java version: `1.8.0_402` → `8.0.402`, `21.0.10` → `21.0.10`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Version(Vec<u32>);
 
@@ -35,7 +35,7 @@ impl Version {
             .map_while(|p| p.parse().ok())
             .collect();
         if nums.len() > 1 && nums[0] == 1 {
-            nums.remove(0); // schema pre-Java 9
+            nums.remove(0); // pre-Java 9 scheme
         }
         (!nums.is_empty()).then_some(Self(nums))
     }
@@ -52,7 +52,7 @@ impl fmt::Display for Version {
     }
 }
 
-/// Requisiti dal blocco `[java]` del lockfile.
+/// Requirements from the lockfile's `[java]` block.
 #[derive(Debug, Clone)]
 pub struct Requirement {
     pub min: u32,
@@ -86,7 +86,7 @@ impl Requirement {
     }
 }
 
-/// Da dove arriva un candidato. L'ordine delle varianti è la priorità di scelta.
+/// Where a candidate comes from. Variant order is the selection priority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Origin {
     Override,
@@ -129,7 +129,7 @@ pub struct Selection {
     pub install: JavaInstall,
 }
 
-/// Un'installazione valutata: compatibile, oppure scartata con il motivo.
+/// An evaluated installation: compatible, or rejected with the reason.
 #[derive(Debug)]
 pub struct Candidate {
     pub origin: Origin,
@@ -160,12 +160,12 @@ pub struct JavaResolver {
     lock_dir: PathBuf,
     platform: Platform,
     override_home: Option<PathBuf>,
-    /// Installazioni di sistema note (JAVA_HOME, PATH, cartelle tipiche, registro).
+    /// Known system installations (JAVA_HOME, PATH, common directories, registry).
     system: Vec<(Origin, PathBuf)>,
 }
 
 impl JavaResolver {
-    /// `override_home`: `--java-home`; se assente si legge `JAREXEC_JAVA_HOME`.
+    /// `override_home`: `--java-home`; if absent, `JAREXEC_JAVA_HOME` is read.
     pub fn new(cache_root: &Path, override_home: Option<PathBuf>) -> Result<Self> {
         let platform = Platform::current()?;
         let override_home = override_home.or_else(|| {
@@ -188,7 +188,7 @@ impl JavaResolver {
         self.platform
     }
 
-    /// Valuta tutti i candidati senza scaricare nulla.
+    /// Evaluates every candidate without downloading anything.
     pub fn find(&self, req: &Requirement) -> Evaluation {
         let mut homes: Vec<(Origin, PathBuf)> = Vec::new();
         if let Some(home) = &self.override_home {
@@ -219,8 +219,8 @@ impl JavaResolver {
             })
             .collect();
 
-        // priorità per origine; a parità, la feature più vicina alla minima
-        // (quella con cui l'app è stata compilata), poi l'aggiornamento più recente
+        // priority by origin; on a tie, the feature version closest to the minimum
+        // (the one the app was compiled for), then the most recent update
         let chosen = candidates
             .iter()
             .enumerate()
@@ -236,7 +236,7 @@ impl JavaResolver {
         Evaluation { candidates, chosen }
     }
 
-    /// Java da usare: un candidato compatibile, oppure (se la politica lo consente) un download.
+    /// Java to use: a compatible candidate, or (if the policy allows) a download.
     pub fn resolve(&self, req: &Requirement) -> Result<Selection> {
         let eval = self.find(req);
         if let Some(sel) = eval.selection() {
@@ -298,7 +298,7 @@ impl JavaResolver {
             .join(format!("jre-{}-{image}-{os}-{arch}.lock", req.min));
         let mut lock = fd_lock::RwLock::new(open_lock_file(&lock_path)?);
         let _guard = lock.write().context("acquiring the file lock")?;
-        // un'altra istanza può averlo installato mentre aspettavamo
+        // another instance may have installed it while we waited
         if let Some(sel) = self.find(req).selection() {
             return Ok(sel.install);
         }
@@ -347,7 +347,7 @@ impl JavaResolver {
             );
             let dest = self.jre_dir.join(name);
             if dest.exists() {
-                fs::remove_dir_all(&dest)?; // resto incompleto di una versione precedente
+                fs::remove_dir_all(&dest)?; // incomplete leftover from a previous version
             }
             fs::rename(&top, &dest)?;
             Ok(dest)
@@ -405,7 +405,7 @@ struct Package {
     size: u64,
 }
 
-/// Versione e architettura dal file `release`; se manca, chiedendole alla JVM.
+/// Version and architecture from the `release` file; if missing, by asking the JVM.
 fn inspect(home: &Path) -> Result<JavaInstall, String> {
     if !bin(home, "java").is_file() {
         return Err("bin/java not found".into());
@@ -423,7 +423,7 @@ fn inspect(home: &Path) -> Result<JavaInstall, String> {
     probe(home)
 }
 
-/// Righe `CHIAVE="valore"` del file `$JAVA_HOME/release`.
+/// `KEY="value"` lines of the `$JAVA_HOME/release` file.
 fn parse_release(text: &str) -> HashMap<String, String> {
     text.lines()
         .filter_map(|l| l.split_once('='))
@@ -431,7 +431,7 @@ fn parse_release(text: &str) -> HashMap<String, String> {
         .collect()
 }
 
-/// Fallback lento (avvia una JVM): proprietà stampate da `-XshowSettings:properties`.
+/// Slow fallback (starts a JVM): properties printed by `-XshowSettings:properties`.
 fn probe(home: &Path) -> Result<JavaInstall, String> {
     let out = Command::new(bin(home, "java"))
         .args(["-XshowSettings:properties", "-version"])
@@ -484,7 +484,7 @@ fn bin(home: &Path, tool: &str) -> PathBuf {
     home.join("bin").join(name)
 }
 
-/// Su macOS la JAVA_HOME è `<bundle>/Contents/Home`.
+/// On macOS JAVA_HOME is `<bundle>/Contents/Home`.
 fn mac_home(dir: &Path) -> PathBuf {
     let home = dir.join("Contents").join("Home");
     if home.is_dir() { home } else { dir.into() }
@@ -511,7 +511,7 @@ fn single_root(dir: &Path) -> Result<PathBuf> {
     }
 }
 
-/// `tar` e `zip` scartano da soli i path con `..` o assoluti.
+/// `tar` and `zip` already reject paths with `..` or absolute paths.
 fn extract(archive: &Path, is_zip: bool, dest: &Path) -> Result<()> {
     let file = File::open(archive)?;
     if is_zip {
@@ -522,7 +522,7 @@ fn extract(archive: &Path, is_zip: bool, dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// JAVA_HOME, `java` nel PATH, cartelle tipiche della piattaforma e (Windows) registro.
+/// JAVA_HOME, `java` on the PATH, common platform directories and (Windows) registry.
 fn system_candidates(os: Os) -> Vec<(Origin, PathBuf)> {
     let mut found = Vec::new();
     if let Some(home) = std::env::var_os("JAVA_HOME").filter(|v| !v.is_empty()) {
@@ -539,8 +539,8 @@ fn system_candidates(os: Os) -> Vec<(Origin, PathBuf)> {
     found
 }
 
-/// Risale dal `java` nel PATH alla sua home, risolvendo i symlink
-/// (es. `/usr/bin/java` → `/etc/alternatives/java` → `/usr/lib/jvm/.../bin/java`).
+/// Walks from `java` on the PATH up to its home, resolving symlinks
+/// (e.g. `/usr/bin/java` → `/etc/alternatives/java` → `/usr/lib/jvm/.../bin/java`).
 fn java_on_path() -> Option<PathBuf> {
     let name = if cfg!(windows) { "java.exe" } else { "java" };
     let path = std::env::var_os("PATH")?;
@@ -646,7 +646,7 @@ pub(crate) mod tests {
         }
     }
 
-    /// Finta installazione: `bin/java` (vuoto) + file `release`.
+    /// Fake installation: `bin/java` (empty) + `release` file.
     pub fn fake_home(root: &Path, name: &str, version: &str, arch: &str) -> PathBuf {
         let home = root.join(name);
         fs::create_dir_all(home.join("bin")).unwrap();
@@ -768,7 +768,7 @@ pub(crate) mod tests {
         builder.into_inner().unwrap().finish().unwrap()
     }
 
-    /// Finta API Adoptium per Temurin 21 JRE sulla piattaforma corrente + l'archivio.
+    /// Fake Adoptium API for a Temurin 21 JRE on the current platform + the archive.
     fn serve_adoptium(archive: &[u8], checksum: &str) -> crate::test_util::TestServer {
         let p = platform();
         let api_path = format!(
@@ -788,7 +788,7 @@ pub(crate) mod tests {
         let (checksum, _) = hash::sha256_reader(archive.as_slice()).unwrap();
         let server = serve_adoptium(&archive, &checksum);
         let cache = tempfile::tempdir().unwrap();
-        // un Java di sistema compatibile esiste, ma source = download lo ignora
+        // a compatible system Java exists, but source = download ignores it
         let sys = fake_home(cache.path(), "sys", "21.0.10", os_arch());
         let r = resolver(cache.path(), &server.url, vec![(Origin::System, sys)]);
         let need = req(21, None, JavaSource::Download);
@@ -804,7 +804,7 @@ pub(crate) mod tests {
                 .unwrap()
                 .permissions()
                 .mode();
-            assert_ne!(mode & 0o111, 0, "bin/java deve restare eseguibile");
+            assert_ne!(mode & 0o111, 0, "bin/java must stay executable");
         }
         let p = platform();
         let expected = format!("temurin-21.0.4+7-jre-{}-{}", p.os, p.arch);
@@ -819,7 +819,7 @@ pub(crate) mod tests {
         assert_eq!(
             server.hits(),
             2,
-            "una chiamata API + un download, poi solo cache"
+            "one API call + one download, then cache only"
         );
     }
 

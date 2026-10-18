@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
-/// SHA-256 (hex minuscolo) e dimensione in byte del file, letto in streaming.
+/// SHA-256 (lowercase hex) and size in bytes of the file, read as a stream.
 pub fn sha256_file(path: &Path) -> Result<(String, u64)> {
     let file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
     sha256_reader(file).with_context(|| format!("reading {}", path.display()))
@@ -15,8 +15,8 @@ pub fn sha256_reader(reader: impl Read) -> io::Result<(String, u64)> {
     copy_hashed(reader, io::sink(), |_| {})
 }
 
-/// Copia `reader` in `writer` calcolando l'hash in un solo passaggio.
-/// `on_chunk` riceve il numero di byte di ogni blocco (per la barra di avanzamento).
+/// Copies `reader` into `writer`, computing the hash in a single pass.
+/// `on_chunk` receives the byte count of each chunk (for the progress bar).
 pub fn copy_hashed(
     mut reader: impl Read,
     mut writer: impl Write,

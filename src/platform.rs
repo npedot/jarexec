@@ -22,7 +22,7 @@ pub struct Platform {
 }
 
 impl Platform {
-    /// Piattaforma per cui è stato compilato questo binario.
+    /// Platform this binary was compiled for.
     pub fn current() -> Result<Self> {
         Self::from_rust(std::env::consts::OS, std::env::consts::ARCH)
     }
@@ -44,7 +44,7 @@ impl Platform {
 }
 
 impl Arch {
-    /// Confronta con `OS_ARCH` del file `release` o con la proprietà `os.arch` della JVM.
+    /// Compares against `OS_ARCH` in the `release` file or the JVM's `os.arch` property.
     pub fn matches(self, os_arch: &str) -> bool {
         match self {
             Arch::X64 => matches!(os_arch, "x86_64" | "amd64" | "x64"),
@@ -53,7 +53,7 @@ impl Arch {
     }
 }
 
-/// Nomi usati dall'API Adoptium (`os=`, `architecture=`).
+/// Names used by the Adoptium API (`os=`, `architecture=`).
 impl fmt::Display for Os {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
