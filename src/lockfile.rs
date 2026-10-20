@@ -1,5 +1,4 @@
 //! Model of the `app.lock` file (format v1).
-#![allow(dead_code)] // not every field is read yet
 
 use serde::{Deserialize, Serialize};
 

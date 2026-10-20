@@ -28,7 +28,7 @@ pub struct LockOptions {
     /// Maven repository, repeatable (default: Maven Central)
     #[arg(long = "repo")]
     pub repos: Vec<String>,
-    /// Output file (default: <name>.lock next to the JAR)
+    /// Output file (default: the app name plus .lock, next to the JAR)
     #[arg(short, long)]
     pub output: Option<PathBuf>,
     /// Local Maven repository, used when paths in the deps file are unreachable
@@ -232,7 +232,7 @@ fn java_warning(java: u32, requires: &mut [(u16, String)]) -> Option<String> {
 }
 
 /// `com.example.*` matches the group, `group:artifact` both; `*` = any text.
-fn bundle_matches(pattern: &str, group: &str, artifact: &str) -> bool {
+pub fn bundle_matches(pattern: &str, group: &str, artifact: &str) -> bool {
     match pattern.split_once(':') {
         Some((g, a)) => glob(g, group) && glob(a, artifact),
         None => glob(pattern, group),

@@ -1,18 +1,3 @@
-mod clean;
-mod deps_list;
-mod fetch;
-mod hash;
-mod http;
-mod jar;
-mod java;
-mod launch;
-mod lock;
-mod lockfile;
-mod paths;
-mod platform;
-#[cfg(test)]
-mod test_util;
-
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -21,7 +6,8 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use indicatif::HumanBytes;
 
-use crate::lockfile::Lockfile;
+use jarexec::lockfile::Lockfile;
+use jarexec::{clean, fetch, java, launch, lock, lockfile, paths};
 
 /// Launcher for Java applications: fetches dependencies and JRE on first run.
 #[derive(Parser)]

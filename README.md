@@ -197,6 +197,28 @@ The lock is regenerated on every build, so every setting belongs in `jarexec loc
 - `clean --unused` keeps only what is referenced by launches: dependencies brought in by `jarexec fetch` alone, with no launch afterwards, are removed.
 - The Windows and macOS binaries are built and tested in CI, but have seen little use on real machines.
 
+## Use as a library
+
+The crate is also a library, for tools that manage several jarexec applications, such as a suite installer that fills one shared cache:
+
+```toml
+[dependencies]
+jarexec = { git = "https://github.com/npedot/jarexec", tag = "v0.3.0" }
+```
+
+```rust
+use jarexec::{clean, fetch, java, lockfile::Lockfile, paths};
+
+let lock = Lockfile::load(path)?;
+let cache = paths::cache_dir(Some(shared_cache))?;
+let guard = clean::cache_lock(&cache)?;
+let _in_use = guard.read()?;
+java::JavaResolver::new(&cache, None)?.resolve(&java::Requirement::from_lock(&lock.java)?)?;
+fetch::Fetcher::new(&cache, &lock.repositories)?.fetch_all(&lock.remote_deps(), fetch::DEFAULT_THREADS)?;
+```
+
+The library API follows the binary's version and may change between minor releases until 1.0.
+
 ## Development
 
 ```bash
