@@ -203,7 +203,7 @@ The crate is also a library, for tools that manage several jarexec applications,
 
 ```toml
 [dependencies]
-jarexec = { git = "https://github.com/npedot/jarexec", tag = "v0.3.0" }
+jarexec = { git = "https://github.com/npedot/jarexec", tag = "v0.4.0" }
 ```
 
 ```rust
@@ -215,6 +215,22 @@ let guard = clean::cache_lock(&cache)?;
 let _in_use = guard.read()?;
 java::JavaResolver::new(&cache, None)?.resolve(&java::Requirement::from_lock(&lock.java)?)?;
 fetch::Fetcher::new(&cache, &lock.repositories)?.fetch_all(&lock.remote_deps(), fetch::DEFAULT_THREADS)?;
+```
+
+Downloads draw a progress bar on the terminal. A program with its own interface can
+receive the progress instead, for everything started inside a closure on that thread:
+
+```rust
+use jarexec::http::{ProgressSink, report_progress_to};
+
+struct Bar;
+impl ProgressSink for Bar {
+    fn start(&self, label: &str, total: u64) { /* a transfer of `total` bytes starts */ }
+    fn inc(&self, bytes: u64) { /* called from several download threads */ }
+    fn finish(&self) {}
+}
+
+report_progress_to(std::sync::Arc::new(Bar), || jarexec::launch::prepare(&lock, &cache, None, false))?;
 ```
 
 The library API follows the binary's version and may change between minor releases until 1.0.

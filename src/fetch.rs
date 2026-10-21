@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use crate::http::Progress;
 use anyhow::{Context, Result, bail, ensure};
-use indicatif::ProgressBar;
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
 
@@ -151,7 +151,7 @@ impl Fetcher {
         Ok((paths, report))
     }
 
-    fn ensure(&self, dep: &Dep, progress: &ProgressBar) -> Fetched {
+    fn ensure(&self, dep: &Dep, progress: &Progress) -> Fetched {
         ensure!(
             dep.sha256.len() == 64 && dep.sha256.bytes().all(|b| b.is_ascii_hexdigit()),
             "invalid sha256 in lockfile"
@@ -202,7 +202,7 @@ impl Fetcher {
     }
 
     /// Copies from `~/.m2` if present with the same hash. `false` if not usable.
-    fn copy_from_m2(&self, dep: &Dep, part: &Path, progress: &ProgressBar) -> Result<bool> {
+    fn copy_from_m2(&self, dep: &Dep, part: &Path, progress: &Progress) -> Result<bool> {
         let Some(m2) = &self.m2 else { return Ok(false) };
         let Ok(src) = File::open(m2.join(repo_path(&dep.coord)?)) else {
             return Ok(false);
@@ -221,7 +221,7 @@ impl Fetcher {
     }
 
     /// `Ok(false)` if the repository answers 404.
-    fn download(&self, url: &str, dep: &Dep, part: &Path, progress: &ProgressBar) -> Result<bool> {
+    fn download(&self, url: &str, dep: &Dep, part: &Path, progress: &Progress) -> Result<bool> {
         let resp = self.client.get(url).send()?;
         if resp.status() == StatusCode::NOT_FOUND {
             return Ok(false);
